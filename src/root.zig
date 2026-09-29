@@ -1,0 +1,9 @@
+//! By convention, root.zig is the root source file when making a package.
+const std = @import("std");
+const Io = std.Io;
+
+const tui = @import("tui");
+
+pub fn main_loopp() !void { 
+    try tui.loop();
+}
