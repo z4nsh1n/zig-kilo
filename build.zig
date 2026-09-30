@@ -29,6 +29,7 @@ pub fn build(b: *std.Build) void {
     // multiple modules and consumers will need to be able to specify which
     // module they want to access.
     const tui_mod = b.addModule("tui", .{
+        .link_libc = true,
         .root_source_file = b.path("src/tui.zig"),
         .target = target,
         .optimize = optimize
@@ -69,6 +70,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         
         .name = "zig_kilo",
+        .use_llvm = true,
         .root_module = b.createModule(.{
             // .link_libc = true,
             // b.createModule defines a new module just like b.addModule but,
