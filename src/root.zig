@@ -7,17 +7,22 @@ const libc = std.c;
 
 const KILO_VERSION = "0.0.1";
 
+const Erow = std.ArrayList(u8);
 
 const EditorConfig = struct {
     screen_rows: u32 = 0,
     screen_cols: u32 = 0,
     cx: u32 = 0,
     cy: u32 = 0,
+    numrows: u32 = 0,
+    row:Erow,
 };
 
-var E:EditorConfig = .{};
+var E:EditorConfig = .{
+    .row = std.ArrayList(u8).empty,
+};
 
-/// Convert a char to control key code
+// Convert a char to control key code
 // pub inline fn ctrl_key(k:u8) tui.Key {
 //     return @enumFromInt(k & 0x1f);
 // }
@@ -26,7 +31,7 @@ var E:EditorConfig = .{};
 pub fn die(err_msg:[]const u8) void {
     tui.clr_screen();
     // std.debug.print("{s}", .{err_msg});
-    @panic(err_msg) ;
+    @panic(err_msg);
 }
 
 // Todo: Move this into tui.
@@ -136,20 +141,25 @@ pub fn editor_refresh_screen(alloc: std.mem.Allocator) void {
 
 pub fn editor_draw_rows(buffer:*std.ArrayList(u8), alloc:std.mem.Allocator) void {
     for (0..E.screen_rows) |y| {
-        if (y == E.screen_rows/3) {
-            const welcome_str = std.fmt.allocPrint(alloc, "Kilo editor -- version {s}", .{KILO_VERSION}) 
-                catch "Kilo editor";
-            defer alloc.free(welcome_str);
-            buffer.appendSlice(alloc, welcome_str) catch die("editor_draw_rows");
+        if (y >= E.numrows) {
+            if (E.numrows == 0 and y == E.screen_rows/3) {
+                const welcome_str = std.fmt.allocPrint(alloc, "Kilo editor -- version {s}", .{KILO_VERSION}) 
+                    catch "Kilo editor";
+                defer alloc.free(welcome_str);
+                buffer.appendSlice(alloc, welcome_str) catch die("editor_draw_rows");
+            } else {
+                buffer.appendSlice(alloc, "~") catch die("editor_draw_rows");
+            }
         } else {
-            buffer.appendSlice(alloc, "~\x1b[K") catch die("editor_draw_rows");
-            // _ = libc.write(libc.STDOUT_FILENO, "~", 1);
+            buffer.appendSlice(alloc, E.row.items) catch die("editor_draw_rows");
+                // _ = libc.write(libc.STDOUT_FILENO, "~", 1);
         }
+        buffer.appendSlice(alloc, "\x1b[K") catch die("editor_draw_rows");
         if(y < E.screen_rows - 1) {
         buffer.appendSlice(alloc, "\r\n") catch die("editor_draw_rows");
         }
     }
-    buffer.appendSlice(alloc, "\x1b[4;5H") catch die("editor_refresh_screen");
+    buffer.appendSlice(alloc, "\x1b[4;5H") catch die("editor_draw_rows");
     // _ = libc.write(libc.STDOUT_FILENO, buffer.items.ptr, buffer.items.len);
 }
 
@@ -157,12 +167,30 @@ pub fn init_editor() void {
     tui.get_terminal_size(&E.screen_rows, &E.screen_cols);
     E.cx = 0;
     E.cy = 0;
+    E.numrows = 0;
+}
+pub fn deinit_editor(alloc:std.mem.Allocator) void {
+    E.row.deinit(alloc);
+}
+pub fn editor_open(alloc: std.mem.Allocator, io: Io, file_name:[]const u8) void {
+    const file = std.Io.Dir.openFile(std.Io.Dir.cwd(), io, file_name, .{}) catch return;
+    var line_buffer:[1024]u8 = undefined;
+    var reader = file.reader(io, &line_buffer);
+    const interface = &reader.interface;
+    const line = interface.takeDelimiterInclusive('\n') catch "No lines";
+    const stripped_line = std.mem.cutSuffix(u8, line, "\n") orelse "";
+    
+    E.row.appendSlice(alloc, stripped_line) catch die("editor_open");
+    E.numrows = 1;
 }
 
 pub fn run(init: std.process.Init) !void { 
     try tui.enable_raw_mode();
     defer tui.disable_raw_mode() catch {};
     init_editor();
+    defer deinit_editor(init.gpa);
+    editor_open(init.gpa,  init.io, "./src/main.zig");
+
 
     var is_running:bool = true;
     while (is_running) {
